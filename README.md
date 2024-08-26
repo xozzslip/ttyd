@@ -1,15 +1,12 @@
-![backend](https://github.com/tsl0922/ttyd/workflows/backend/badge.svg)
-![frontend](https://github.com/tsl0922/ttyd/workflows/frontend/badge.svg)
-[![GitHub Releases](https://img.shields.io/github/downloads/tsl0922/ttyd/total)](https://github.com/tsl0922/ttyd/releases)
-[![Docker Pulls](https://img.shields.io/docker/pulls/tsl0922/ttyd)](https://hub.docker.com/r/tsl0922/ttyd)
-[![Packaging status](https://repology.org/badge/tiny-repos/ttyd.svg)](https://repology.org/project/ttyd/versions)
-![GitHub](https://img.shields.io/github/license/tsl0922/ttyd)
-
 # ttyd - Share your terminal over the web
 
 ttyd is a simple command-line tool for sharing terminal over the web.
 
-![screenshot](https://github.com/tsl0922/ttyd/raw/main/screenshot.gif)
+# Build from sources
+
+```bash
+CROSS_ROOT=~/trashtrash/ttyd/workdir/cross STAGE_ROOT=~/trashtrash/ttyd/workdir/stage BUILD_ROOT=~/trashtrash/ttyd/workdir/build  ./scripts/cross-build.sh && workdir/stage/x86_64-linux-musl/bin/ttyd -W bash
+```
 
 # Features
 

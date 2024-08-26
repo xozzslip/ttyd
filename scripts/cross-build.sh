@@ -5,18 +5,35 @@
 #
 set -eo pipefail
 
-CROSS_ROOT="${CROSS_ROOT:-/opt/cross}"
-STAGE_ROOT="${STAGE_ROOT:-/opt/stage}"
-BUILD_ROOT="${BUILD_ROOT:-/opt/build}"
-BUILD_TARGET="${BUILD_TARGET:-x86_64}"
 
+
+WORKDIR=${WORKDIR:-"./build/deps"}
+if [ -n "$WORKDIR" ] && [ "${WORKDIR:0:1}" != "/" ]; then
+    WORKDIR="$(pwd)/$WORKDIR"  # make absolute path
+fi
+
+BUILD_TARGET="${BUILD_TARGET:-x86_64}"
 ZLIB_VERSION="${ZLIB_VERSION:-1.3.1}"
 JSON_C_VERSION="${JSON_C_VERSION:-0.17}"
 MBEDTLS_VERSION="${MBEDTLS_VERSION:-2.28.5}"
 LIBUV_VERSION="${LIBUV_VERSION:-1.44.2}"
 LIBWEBSOCKETS_VERSION="${LIBWEBSOCKETS_VERSION:-4.3.3}"
 
+is_installed() {
+    local lib_name="$1"
+    local check_file="$2"
+
+    if [ -f "${check_file}" ]; then
+        echo "=== Dependency ${lib_name} is already built and installed (${check_file}). Skipping..."
+        return 0
+    else
+        echo "=== Dependency ${lib_name} is not installed yet (${check_file}). Installing..."
+        return 1
+    fi
+}
+
 build_zlib() {
+    if is_installed "zlib-${ZLIB_VERSION}" "${STAGE_DIR}/lib/libz.a"; then return; fi
     echo "=== Building zlib-${ZLIB_VERSION} (${TARGET})..."
     curl -fSsLo- "https://zlib.net/zlib-${ZLIB_VERSION}.tar.gz" | tar xz -C "${BUILD_DIR}"
     pushd "${BUILD_DIR}"/zlib-"${ZLIB_VERSION}"
@@ -26,6 +43,7 @@ build_zlib() {
 }
 
 build_json-c() {
+    if is_installed "json-c-${JSON_C_VERSION}" "${STAGE_DIR}/lib/libjson-c.a"; then return; fi
     echo "=== Building json-c-${JSON_C_VERSION} (${TARGET})..."
     curl -fSsLo- "https://s3.amazonaws.com/json-c_releases/releases/json-c-${JSON_C_VERSION}.tar.gz" | tar xz -C "${BUILD_DIR}"
     pushd "${BUILD_DIR}/json-c-${JSON_C_VERSION}"
@@ -42,6 +60,7 @@ build_json-c() {
 }
 
 build_mbedtls() {
+    if is_installed "mbedtls-${MBEDTLS_VERSION}" "${STAGE_DIR}/lib/libmbedtls.a"; then return; fi
     echo "=== Building mbedtls-${MBEDTLS_VERSION} (${TARGET})..."
     curl -fSsLo- "https://github.com/ARMmbed/mbedtls/archive/v${MBEDTLS_VERSION}.tar.gz" | tar xz -C "${BUILD_DIR}"
     pushd "${BUILD_DIR}/mbedtls-${MBEDTLS_VERSION}"
@@ -56,6 +75,7 @@ build_mbedtls() {
 }
 
 build_libuv() {
+    if is_installed "libuv-${LIBUV_VERSION}" "${STAGE_DIR}/lib/libuv.a"; then return; fi
     echo "=== Building libuv-${LIBUV_VERSION} (${TARGET})..."
     curl -fSsLo- "https://dist.libuv.org/dist/v${LIBUV_VERSION}/libuv-v${LIBUV_VERSION}.tar.gz" | tar xz -C "${BUILD_DIR}"
     pushd "${BUILD_DIR}/libuv-v${LIBUV_VERSION}"
@@ -82,6 +102,7 @@ EOF
 }
 
 build_libwebsockets() {
+    if is_installed "libwebsockets-${LIBWEBSOCKETS_VERSION}" "${STAGE_DIR}/lib/libwebsockets.a"; then return; fi
     echo "=== Building libwebsockets-${LIBWEBSOCKETS_VERSION} (${TARGET})..."
     curl -fSsLo- "https://github.com/warmcat/libwebsockets/archive/v${LIBWEBSOCKETS_VERSION}.tar.gz" | tar xz -C "${BUILD_DIR}"
     pushd "${BUILD_DIR}/libwebsockets-${LIBWEBSOCKETS_VERSION}"
@@ -118,22 +139,39 @@ build_libwebsockets() {
 
 build_ttyd() {
     echo "=== Building ttyd (${TARGET})..."
-    rm -rf build && mkdir -p build && cd build
-    cmake -DCMAKE_TOOLCHAIN_FILE="${BUILD_DIR}/cross-${TARGET}.cmake" \
-        -DCMAKE_INSTALL_PREFIX="${STAGE_DIR}" \
-        -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" \
-        -DCMAKE_C_FLAGS="-Os -ffunction-sections -fdata-sections -fno-unwind-tables -fno-asynchronous-unwind-tables -flto" \
-        -DCMAKE_EXE_LINKER_FLAGS="-static -no-pie -Wl,-s -Wl,-Bsymbolic -Wl,--gc-sections" \
-        -DCMAKE_BUILD_TYPE=RELEASE \
-        ..
-    make install
+    pushd build
+        cmake -DCMAKE_TOOLCHAIN_FILE="${BUILD_DIR}/cross-${TARGET}.cmake" \
+            -DCMAKE_INSTALL_PREFIX="${STAGE_DIR}" \
+            -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" \
+            -DCMAKE_C_FLAGS="-Os -ffunction-sections -fdata-sections -fno-unwind-tables -fno-asynchronous-unwind-tables -flto" \
+            -DCMAKE_EXE_LINKER_FLAGS="-static -no-pie -Wl,-s -Wl,-Bsymbolic -Wl,--gc-sections" \
+            -DCMAKE_BUILD_TYPE=RELEASE \
+            ..
+        make install
+    popd
+}
+
+build_toolchain() {
+    if is_installed "toolchain ${ALIAS}" "${CROSS_ROOT}/bin/${TARGET}-gcc"; then return; fi
+    echo "=== Installing toolchain ${ALIAS} (${TARGET})..."
+    curl -fSsLo- "${MUSL_CC_URL}/${TARGET}-cross.tgz" | tar xz -C "${CROSS_ROOT}" --strip-components=${COMPONENTS}
+    echo "=== Building target ${ALIAS} (${TARGET})..."
+    install_cmake_cross_file ${SYSTEM}
 }
 
 build() {
     TARGET="$1"
     ALIAS="$2"
+    CROSS_ROOT="${WORKDIR}/cross"
+    STAGE_ROOT="${WORKDIR}/stage"
+    BUILD_ROOT="${WORKDIR}/build"
     STAGE_DIR="${STAGE_ROOT}/${TARGET}"
     BUILD_DIR="${BUILD_ROOT}/${TARGET}"
+    CROSS_DIR="${CROSS_ROOT}/${TARGET}"
+
+    mkdir -p "${STAGE_DIR}" "${BUILD_DIR}" "${CROSS_DIR}"
+    echo "${STAGE_DIR}" "${BUILD_DIR}" "${CROSS_DIR}"
+
     MUSL_CC_URL="https://github.com/tsl0922/musl-toolchains/releases/download/2021-11-23"
     COMPONENTS="1"
     SYSTEM="Linux"
@@ -143,19 +181,10 @@ build() {
         SYSTEM="Windows"
     fi
 
-    echo "=== Installing toolchain ${ALIAS} (${TARGET})..."
-
-    mkdir -p "${CROSS_ROOT}" && export PATH="${PATH}:${CROSS_ROOT}/bin"
-    curl -fSsLo- "${MUSL_CC_URL}/${TARGET}-cross.tgz" | tar xz -C "${CROSS_ROOT}" --strip-components=${COMPONENTS}
-
-    echo "=== Building target ${ALIAS} (${TARGET})..."
-
-    rm -rf "${STAGE_DIR}" "${BUILD_DIR}"
-    mkdir -p "${STAGE_DIR}" "${BUILD_DIR}"
     export PKG_CONFIG_PATH="${STAGE_DIR}/lib/pkgconfig"
+    export PATH="${PATH}:${CROSS_ROOT}/bin"
 
-    install_cmake_cross_file ${SYSTEM}
-
+    build_toolchain
     build_zlib
     build_json-c
     build_libuv
