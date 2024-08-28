@@ -85,11 +85,10 @@ static void process_read_cb(pty_process *process, pty_buf_t *buf, bool eof) {
     return;
   }
 
-  if (eof && !process_running(process))
-    ctx->pss->lws_close_status = process->exit_code == 0 ? 1000 : 1011;
-  else
+  if (!eof) {
     ctx->pss->pty_buf = buf;
-  lws_callback_on_writable(ctx->pss->wsi);
+    lws_callback_on_writable(ctx->pss->wsi);
+  }
 }
 
 static void process_exit_cb(pty_process *process) {
@@ -268,6 +267,7 @@ int callback_tty(struct lws *wsi, enum lws_callback_reasons reason, void *user, 
       }
 
       if (pss->lws_close_status > LWS_CLOSE_STATUS_NOSTATUS) {
+        lwsl_notice("closing websocket with lws_close_status=%d\n", pss->lws_close_status);
         lws_close_reason(wsi, pss->lws_close_status, NULL, 0);
         return 1;
       }
